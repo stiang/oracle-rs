@@ -5,6 +5,7 @@ A pure Rust driver for Oracle databases. No OCI or ODPI-C dependencies required.
 [![Crates.io](https://img.shields.io/crates/v/oracle-rs.svg)](https://crates.io/crates/oracle-rs)
 [![Documentation](https://docs.rs/oracle-rs/badge.svg)](https://docs.rs/oracle-rs)
 [![License](https://img.shields.io/crates/l/oracle-rs.svg)](LICENSE-APACHE)
+[![Build Status](https://github.com/stiang/oracle-rs/actions/workflows/rust.yml/badge.svg)](https://github.com/stiang/oracle-rs/actions/workflows/rust.yml)
 
 ## Features
 
