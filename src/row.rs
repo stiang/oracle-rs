@@ -40,13 +40,14 @@ use crate::types::{
 ///
 /// # Type Conversions
 ///
-/// Values can be converted to Rust types using `TryFrom`:
+/// Values can be converted to Rust types using the accessor methods:
 ///
-/// ```rust,no_run
+/// ```rust
 /// use oracle_rs::Value;
 ///
 /// let value = Value::Integer(42);
-/// let num: i64 = (&value).try_into().unwrap();
+/// let num: i64 = value.as_i64().unwrap();
+/// assert_eq!(num, 42);
 /// ```
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -306,7 +307,7 @@ impl std::fmt::Display for Value {
 /// A row of data from a query result.
 ///
 /// Rows contain values that can be accessed by column index (0-based) or by
-/// column name. Use the `get` method for type-safe value extraction.
+/// column name. Use the `get_*` methods for type-safe value extraction.
 ///
 /// # Example
 ///
@@ -316,13 +317,13 @@ impl std::fmt::Display for Value {
 /// # async fn example(conn: Connection) -> oracle_rs::Result<()> {
 /// let result = conn.query("SELECT id, name, salary FROM employees", &[]).await?;
 ///
-/// for row in result.rows() {
+/// for row in &result.rows {
 ///     // Access by index
-///     let id: i64 = row.get(0)?;
+///     let id = row.get_i64(0).unwrap_or(0);
 ///
 ///     // Access by column name
-///     let name: String = row.get("name")?;
-///     let salary: f64 = row.get("salary")?;
+///     let name = row.get_by_name("name").and_then(|v| v.as_str()).unwrap_or("");
+///     let salary = row.get_by_name("salary").and_then(|v| v.as_f64()).unwrap_or(0.0);
 ///
 ///     println!("{}: {} (${:.2})", id, name, salary);
 /// }

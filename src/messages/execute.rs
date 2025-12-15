@@ -554,7 +554,6 @@ impl<'a> ExecuteMessage<'a> {
     /// and values for each row in the batch.
     fn write_bind_params(&self, buf: &mut WriteBuffer, caps: &Capabilities) -> Result<()> {
         use crate::constants::{bind_flags, ccap_value, charset};
-        use crate::types::LobValue;
 
         /// LOB prefetch flag constant (TNS_LOB_PREFETCH_FLAG from Python)
         const LOB_PREFETCH_FLAG: u64 = 0x2000000;

@@ -30,9 +30,9 @@
 //!     // Execute a query
 //!     let result = conn.query("SELECT id, name FROM users", &[]).await?;
 //!
-//!     for row in result.rows() {
-//!         let id: i64 = row.get(0)?;
-//!         let name: String = row.get(1)?;
+//!     for row in &result.rows {
+//!         let id = row.get_i64(0).unwrap_or(0);
+//!         let name = row.get_string(1).unwrap_or("");
 //!         println!("User {}: {}", id, name);
 //!     }
 //!
@@ -96,13 +96,13 @@
 //! // With bind parameters
 //! let result = conn.query(
 //!     "SELECT * FROM employees WHERE department_id = :1 AND salary > :2",
-//!     &[&10, &50000.0]
+//!     &[10.into(), 50000.0.into()]
 //! ).await?;
 //!
 //! // Access rows
-//! for row in result.rows() {
-//!     let name: String = row.get("employee_name")?;
-//!     let salary: f64 = row.get("salary")?;
+//! for row in &result.rows {
+//!     let name = row.get_by_name("employee_name").and_then(|v| v.as_str()).unwrap_or("");
+//!     let salary = row.get_by_name("salary").and_then(|v| v.as_f64()).unwrap_or(0.0);
 //! }
 //! # Ok(())
 //! # }
@@ -111,13 +111,13 @@
 //! ### DML Operations
 //!
 //! ```rust,no_run
-//! use oracle_rs::Connection;
+//! use oracle_rs::{Connection, Value};
 //!
 //! # async fn example(conn: Connection) -> oracle_rs::Result<()> {
 //! // INSERT
 //! let result = conn.execute(
 //!     "INSERT INTO users (id, name) VALUES (:1, :2)",
-//!     &[&1, &"Alice"]
+//!     &[1.into(), "Alice".into()]
 //! ).await?;
 //! println!("Rows inserted: {}", result.rows_affected);
 //!
@@ -130,13 +130,14 @@
 //! ### Batch Operations
 //!
 //! ```rust,no_run
-//! use oracle_rs::{Connection, BatchBuilder};
+//! use oracle_rs::{Connection, BatchBuilder, Value};
 //!
 //! # async fn example(conn: Connection) -> oracle_rs::Result<()> {
 //! let batch = BatchBuilder::new("INSERT INTO users (id, name) VALUES (:1, :2)")
-//!     .add_row(&[&1, &"Alice"])?
-//!     .add_row(&[&2, &"Bob"])?
-//!     .add_row(&[&3, &"Charlie"])?;
+//!     .add_row(vec![1.into(), "Alice".into()])
+//!     .add_row(vec![2.into(), "Bob".into()])
+//!     .add_row(vec![3.into(), "Charlie".into()])
+//!     .build();
 //!
 //! let result = conn.execute_batch(&batch).await?;
 //! conn.commit().await?;
@@ -147,12 +148,12 @@
 //! ## Transactions
 //!
 //! ```rust,no_run
-//! use oracle_rs::Connection;
+//! use oracle_rs::{Connection, Value};
 //!
 //! # async fn example(conn: Connection) -> oracle_rs::Result<()> {
 //! // Auto-commit is off by default
-//! conn.execute("INSERT INTO accounts (id, balance) VALUES (:1, :2)", &[&1, &100.0]).await?;
-//! conn.execute("UPDATE accounts SET balance = balance - :1 WHERE id = :2", &[&50.0, &1]).await?;
+//! conn.execute("INSERT INTO accounts (id, balance) VALUES (:1, :2)", &[1.into(), 100.0.into()]).await?;
+//! conn.execute("UPDATE accounts SET balance = balance - :1 WHERE id = :2", &[50.0.into(), 1.into()]).await?;
 //!
 //! // Commit the transaction
 //! conn.commit().await?;
@@ -162,7 +163,7 @@
 //!
 //! // Savepoints
 //! conn.savepoint("before_update").await?;
-//! conn.execute("UPDATE accounts SET balance = 0 WHERE id = :1", &[&1]).await?;
+//! conn.execute("UPDATE accounts SET balance = 0 WHERE id = :1", &[1.into()]).await?;
 //! conn.rollback_to_savepoint("before_update").await?;  // Undo the update
 //! # Ok(())
 //! # }

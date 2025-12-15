@@ -44,7 +44,7 @@ use crate::error::{Error, Result};
 use crate::implicit::{ImplicitResult, ImplicitResults};
 use crate::messages::{AcceptMessage, AuthMessage, AuthPhase, ConnectMessage, ExecuteMessage, ExecuteOptions, FetchMessage, LobOpMessage};
 use crate::packet::Packet;
-use crate::row::{Row, RowDataDecoder, Value};
+use crate::row::{Row, Value};
 use crate::statement::{BindParam, ColumnInfo, Statement, StatementType};
 use crate::types::{LobData, LobLocator, LobValue};
 use crate::statement_cache::StatementCache;
@@ -268,12 +268,6 @@ impl OracleStream {
         }
     }
 
-    async fn shutdown(&mut self) -> std::io::Result<()> {
-        match self {
-            OracleStream::Plain(stream) => stream.shutdown().await,
-            OracleStream::Tls(stream) => stream.shutdown().await,
-        }
-    }
 }
 
 /// Internal connection state shared across async operations
@@ -291,19 +285,6 @@ struct ConnectionInner {
 }
 
 impl ConnectionInner {
-    fn new() -> Self {
-        Self {
-            stream: None,
-            capabilities: Capabilities::default(),
-            state: ConnectionState::Disconnected,
-            server_info: ServerInfo::default(),
-            sdu_size: 8192,
-            large_sdu: false,
-            sequence_number: 0,
-            statement_cache: None,
-        }
-    }
-
     fn new_with_cache(cache_size: usize) -> Self {
         Self {
             stream: None,
@@ -710,7 +691,7 @@ impl ConnectionInner {
 /// # Example
 ///
 /// ```rust,no_run
-/// use oracle_rs::{Config, Connection};
+/// use oracle_rs::{Config, Connection, Value};
 ///
 /// # async fn example() -> oracle_rs::Result<()> {
 /// // Create a connection
@@ -718,14 +699,14 @@ impl ConnectionInner {
 /// let conn = Connection::connect_with_config(config).await?;
 ///
 /// // Execute a query
-/// let result = conn.query("SELECT * FROM employees WHERE dept_id = :1", &[&10]).await?;
-/// for row in result.rows() {
-///     let name: String = row.get("name")?;
+/// let result = conn.query("SELECT * FROM employees WHERE dept_id = :1", &[10.into()]).await?;
+/// for row in &result.rows {
+///     let name = row.get_by_name("name").and_then(|v| v.as_str()).unwrap_or("");
 ///     println!("Employee: {}", name);
 /// }
 ///
 /// // Execute DML with transaction
-/// conn.execute("INSERT INTO logs (msg) VALUES (:1)", &[&"Hello"]).await?;
+/// conn.execute("INSERT INTO logs (msg) VALUES (:1)", &["Hello".into()]).await?;
 /// conn.commit().await?;
 ///
 /// // Close the connection
@@ -983,27 +964,6 @@ impl Connection {
                 packet_type
             ))),
         }
-    }
-
-    /// Build a DATA packet with the correct header format based on large_sdu setting
-    fn build_data_packet(payload: &[u8], large_sdu: bool) -> Result<bytes::Bytes> {
-        let mut packet_buf = WriteBuffer::new();
-        let packet_len = PACKET_HEADER_SIZE + payload.len();
-
-        if large_sdu {
-            // Large SDU format: 4-byte length
-            packet_buf.write_u32_be(packet_len as u32)?;
-        } else {
-            // Standard format: 2-byte length + 2-byte checksum
-            packet_buf.write_u16_be(packet_len as u16)?;
-            packet_buf.write_u16_be(0)?; // Checksum
-        }
-        packet_buf.write_u8(PacketType::Data as u8)?;
-        packet_buf.write_u8(0)?; // Flags
-        packet_buf.write_u16_be(0)?; // Header checksum
-        packet_buf.write_bytes(payload)?;
-
-        Ok(packet_buf.freeze())
     }
 
     /// Negotiate protocol version and capabilities
@@ -2939,89 +2899,6 @@ impl Connection {
         Ok((out_indices, out_columns))
     }
 
-    /// Parse multiple query response payloads (from multiple packets)
-    ///
-    /// Oracle can send rows across multiple DATA packets. This function
-    /// processes all collected payloads and accumulates the results.
-    fn parse_query_response_multi(&self, payloads: &[Vec<u8>], caps: &Capabilities) -> Result<QueryResult> {
-        let mut columns: Vec<ColumnInfo> = Vec::new();
-        let mut rows: Vec<Row> = Vec::new();
-        let mut cursor_id: u16 = 0;
-
-        for payload in payloads {
-            if payload.len() < 3 {
-                continue;
-            }
-
-            let mut buf = ReadBuffer::from_slice(payload);
-
-            // Skip data flags
-            buf.skip(2)?;
-
-            // Process messages in this payload
-            while buf.remaining() > 0 {
-                let msg_type = buf.read_u8()?;
-
-                match msg_type {
-                    // DescribeInfo (16) - column metadata
-                    x if x == MessageType::DescribeInfo as u8 => {
-                        buf.skip_raw_bytes_chunked()?;
-                        columns = self.parse_describe_info(&mut buf, caps.ttc_field_version)?;
-                    }
-
-                    // RowHeader (6) - header info for rows
-                    x if x == MessageType::RowHeader as u8 => {
-                        self.parse_row_header(&mut buf)?;
-                    }
-
-                    // RowData (7) - actual row values
-                    x if x == MessageType::RowData as u8 => {
-                        let row = self.parse_row_data_single(&mut buf, &columns, caps)?;
-                        rows.push(row);
-                    }
-
-                    // Error (4) - completion or error
-                    x if x == MessageType::Error as u8 => {
-                        let (error_code, error_msg, cid) = self.parse_error_info(&mut buf)?;
-                        cursor_id = cid;
-                        if error_code != 0 && error_code != 1403 {
-                            return Err(Error::OracleError {
-                                code: error_code,
-                                message: error_msg.unwrap_or_default(),
-                            });
-                        }
-                        // Error marks end of this message stream
-                        break;
-                    }
-
-                    // Parameter (8) - return parameters
-                    x if x == MessageType::Parameter as u8 => {
-                        self.parse_return_parameters(&mut buf)?;
-                    }
-
-                    // Status (9) - call status
-                    x if x == MessageType::Status as u8 => {
-                        let _call_status = buf.read_ub4()?;
-                        let _end_to_end_seq = buf.read_ub2()?;
-                    }
-
-                    _ => {
-                        // Unknown message type - break to avoid parsing errors
-                        break;
-                    }
-                }
-            }
-        }
-
-        Ok(QueryResult {
-            columns,
-            rows,
-            rows_affected: 0,
-            has_more_rows: false,
-            cursor_id,
-        })
-    }
-
     /// Parse row header (TNS_MSG_TYPE_ROW_HEADER = 6)
     fn parse_row_header(&self, buf: &mut ReadBuffer) -> Result<()> {
         buf.skip_ub1()?;  // flags
@@ -3112,7 +2989,6 @@ impl Connection {
     /// Parse a single column value from the buffer
     fn parse_column_value(&self, buf: &mut ReadBuffer, col: &ColumnInfo, caps: &Capabilities) -> Result<Value> {
         use crate::constants::OracleType;
-        use crate::types::RefCursor;
 
         // Handle LOB columns specially - they have a different format
         if col.is_lob() {
@@ -3900,31 +3776,6 @@ impl Connection {
         Ok(columns)
     }
 
-    /// Parse row data from response
-    fn parse_row_data(
-        &self,
-        buf: &mut ReadBuffer,
-        columns: &[ColumnInfo],
-    ) -> Result<Vec<Row>> {
-        // Read number of rows
-        let num_rows = buf.read_ub4()? as usize;
-        if num_rows == 0 || columns.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let mut rows = Vec::with_capacity(num_rows);
-        let decoder = RowDataDecoder::new(columns);
-
-        let mut prev_row: Option<Row> = None;
-        for _ in 0..num_rows {
-            let row = decoder.decode_row(buf, prev_row.as_ref())?;
-            prev_row = Some(row.clone());
-            rows.push(row);
-        }
-
-        Ok(rows)
-    }
-
     /// Commit the current transaction.
     ///
     /// Makes all changes in the current transaction permanent. After commit,
@@ -3933,10 +3784,10 @@ impl Connection {
     /// # Example
     ///
     /// ```rust,no_run
-    /// # use oracle_rs::Connection;
+    /// # use oracle_rs::{Connection, Value};
     /// # async fn example(conn: Connection) -> oracle_rs::Result<()> {
-    /// conn.execute("INSERT INTO users (name) VALUES (:1)", &[&"Alice"]).await?;
-    /// conn.execute("INSERT INTO users (name) VALUES (:1)", &[&"Bob"]).await?;
+    /// conn.execute("INSERT INTO users (name) VALUES (:1)", &["Alice".into()]).await?;
+    /// conn.execute("INSERT INTO users (name) VALUES (:1)", &["Bob".into()]).await?;
     /// conn.commit().await?; // Both inserts are now permanent
     /// # Ok(())
     /// # }
@@ -3957,9 +3808,9 @@ impl Connection {
     /// # Example
     ///
     /// ```rust,no_run
-    /// # use oracle_rs::Connection;
+    /// # use oracle_rs::{Connection, Value};
     /// # async fn example(conn: Connection) -> oracle_rs::Result<()> {
-    /// conn.execute("DELETE FROM users WHERE id = :1", &[&1]).await?;
+    /// conn.execute("DELETE FROM users WHERE id = :1", &[1.into()]).await?;
     /// // Oops, wrong user!
     /// conn.rollback().await?; // Delete is undone
     /// # Ok(())
@@ -4991,12 +4842,6 @@ impl Connection {
         }
 
         Ok(())
-    }
-
-    /// Send a simple function with no parameters (commit, rollback, ping, logoff)
-    async fn send_simple_function(&self, function_code: FunctionCode) -> Result<()> {
-        let mut inner = self.inner.lock().await;
-        self.send_simple_function_inner(&mut inner, function_code).await
     }
 
     /// Send a marker packet to the server

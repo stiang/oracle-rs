@@ -89,13 +89,6 @@ impl TcpTransport {
             .ok_or(Error::ConnectionClosed)
     }
 
-    /// Get shared access to the underlying stream
-    fn stream(&self) -> Result<&TcpStream> {
-        self.stream
-            .as_ref()
-            .ok_or(Error::ConnectionClosed)
-    }
-
     /// Read exactly n bytes from the stream
     async fn read_exact(&mut self, n: usize) -> Result<Bytes> {
         let stream = self.stream_mut()?;

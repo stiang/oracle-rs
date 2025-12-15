@@ -20,7 +20,6 @@ const VERSION_MAX_FNAME_65535: u8 = 3;
 // Primary flags
 const FLAG_REL_OFFSET_MODE: u16 = 0x0001;
 const FLAG_INLINE_LEAF: u16 = 0x0002;
-const FLAG_LEN_IN_PCODE: u16 = 0x0004;
 const FLAG_NUM_FNAMES_UINT32: u16 = 0x0008;
 const FLAG_IS_SCALAR: u16 = 0x0010;
 const FLAG_HASH_ID_UINT8: u16 = 0x0100;
@@ -212,7 +211,7 @@ impl OsonDecoder {
         self.pos += num_fields as usize;
 
         // Read offsets
-        let offsets_start = self.pos;
+        let _offsets_start = self.pos;
         let mut offsets = Vec::with_capacity(num_fields as usize);
         for _ in 0..num_fields {
             let offset = if offsets_size == 2 {
@@ -471,7 +470,7 @@ impl OsonDecoder {
             self.pos = self.tree_seg_pos + offset as usize;
             let shared_node_type = self.read_u8()?;
             let shared_children_bits = shared_node_type & 0x18;
-            let num_children = match shared_children_bits {
+            let _num_children = match shared_children_bits {
                 0x00 => self.read_u8()? as u32,
                 0x08 => self.read_u16_be()? as u32,
                 0x10 => self.read_u32_be()?,

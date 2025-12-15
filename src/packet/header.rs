@@ -170,7 +170,8 @@ impl Default for PacketHeader {
     }
 }
 
-/// Builder for constructing packets
+/// Builder for constructing packets (used in tests)
+#[cfg(test)]
 #[derive(Debug)]
 pub struct PacketBuilder {
     header: PacketHeader,
@@ -178,6 +179,7 @@ pub struct PacketBuilder {
     large_sdu: bool,
 }
 
+#[cfg(test)]
 impl PacketBuilder {
     /// Create a new packet builder for the given packet type
     pub fn new(packet_type: PacketType) -> Self {

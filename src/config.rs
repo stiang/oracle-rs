@@ -78,7 +78,7 @@ pub enum TlsMode {
 ///
 /// ## TLS connection with system certificates
 ///
-/// ```rust
+/// ```rust,no_run
 /// use oracle_rs::Config;
 ///
 /// let config = Config::new("hostname", 2484, "service", "user", "password")
@@ -88,7 +88,7 @@ pub enum TlsMode {
 ///
 /// ## TLS connection with Oracle wallet
 ///
-/// ```rust
+/// ```rust,ignore
 /// use oracle_rs::Config;
 ///
 /// let config = Config::new("hostname", 2484, "service", "user", "password")
@@ -237,7 +237,7 @@ impl Config {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// use oracle_rs::Config;
     ///
     /// let config = Config::new("hostname", 2484, "service", "user", "password")

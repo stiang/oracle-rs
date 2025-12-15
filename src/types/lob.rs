@@ -86,7 +86,7 @@ pub struct LobLocator {
     /// Oracle type (CLOB, BLOB, BFILE)
     pub(crate) oracle_type: OracleType,
     /// Character set form (for CLOB/NCLOB distinction)
-    pub(crate) csfrm: u8,
+    pub(crate) _csfrm: u8,
 }
 
 impl LobLocator {
@@ -103,7 +103,7 @@ impl LobLocator {
             size,
             chunk_size,
             oracle_type,
-            csfrm,
+            _csfrm: csfrm,
         }
     }
 

@@ -21,11 +21,17 @@ use crate::error::{Error, Result};
 /// Decoded Oracle DATE
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OracleDate {
+    /// Year (e.g., 2024)
     pub year: i32,
+    /// Month (1-12)
     pub month: u8,
+    /// Day (1-31)
     pub day: u8,
+    /// Hour (0-23)
     pub hour: u8,
+    /// Minute (0-59)
     pub minute: u8,
+    /// Second (0-59)
     pub second: u8,
 }
 
@@ -73,11 +79,17 @@ impl Default for OracleDate {
 /// Decoded Oracle TIMESTAMP (with optional timezone)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OracleTimestamp {
+    /// Year (e.g., 2024)
     pub year: i32,
+    /// Month (1-12)
     pub month: u8,
+    /// Day (1-31)
     pub day: u8,
+    /// Hour (0-23)
     pub hour: u8,
+    /// Minute (0-59)
     pub minute: u8,
+    /// Second (0-59)
     pub second: u8,
     /// Fractional seconds in microseconds (0-999999)
     pub microsecond: u32,

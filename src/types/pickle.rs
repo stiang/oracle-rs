@@ -66,7 +66,7 @@ pub fn decode_collection(obj_type: &DbObjectType, data: &[u8]) -> Result<DbObjec
     let mut buf = ReadBuffer::from(data);
 
     // Read header
-    let (flags, _version) = read_header(&mut buf)?;
+    let (_flags, _version) = read_header(&mut buf)?;
 
     // For collections, the IS_COLLECTION flag may or may not be set
     // depending on whether this is incoming data (has flag) or outgoing (no flag)

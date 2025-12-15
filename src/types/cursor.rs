@@ -68,8 +68,4 @@ impl RefCursor {
         self.fetched
     }
 
-    /// Mark the cursor as fetched (internal use)
-    pub(crate) fn mark_fetched(&mut self) {
-        self.fetched = true;
-    }
 }

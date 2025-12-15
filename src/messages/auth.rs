@@ -17,7 +17,7 @@ use crate::buffer::{ReadBuffer, WriteBuffer};
 use crate::capabilities::Capabilities;
 use crate::constants::{auth_mode, verifier_type, FunctionCode, MessageType, PacketType, PACKET_HEADER_SIZE};
 use crate::crypto::{
-    decrypt_cbc_192, decrypt_cbc_256, encrypt_cbc_192, encrypt_cbc_256, encrypt_cbc_256_pkcs7,
+    decrypt_cbc_192, decrypt_cbc_256, encrypt_cbc_192, encrypt_cbc_256_pkcs7,
     generate_11g_combo_key, generate_11g_password_hash, generate_12c_combo_key,
     generate_12c_password_hash, generate_salt, generate_session_key_part, pbkdf2_derive,
 };
@@ -107,8 +107,8 @@ pub struct AuthMessage {
     pid: String,
     /// Driver name
     driver_name: String,
-    /// Service name
-    service_name: String,
+    /// Service name (stored for potential future use)
+    _service_name: String,
     /// Sequence number for protocol messages
     sequence_number: u8,
 }
@@ -152,7 +152,7 @@ impl AuthMessage {
                 .unwrap_or_else(|_| "unknown".to_string()),
             pid: std::process::id().to_string(),
             driver_name: format!("oracle-rs : {}", env!("CARGO_PKG_VERSION")),
-            service_name: service_name.to_string(),
+            _service_name: service_name.to_string(),
             sequence_number: 1,
         }
     }

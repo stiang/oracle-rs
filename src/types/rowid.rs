@@ -154,24 +154,6 @@ pub fn decode_rowid(data: &[u8]) -> Result<RowId> {
     )))
 }
 
-/// Decode ROWID from the internal cursor format
-///
-/// This is used when reading ROWID from the cursor after a query.
-/// Format: rba (u32) + partition_id (u16) + skip byte + block_num (u32) + slot_num (u16)
-pub fn decode_rowid_from_cursor(
-    rba: u32,
-    partition_id: u16,
-    block_num: u32,
-    slot_num: u16,
-) -> RowId {
-    RowId {
-        rba,
-        partition_id,
-        block_num,
-        slot_num,
-    }
-}
-
 /// Parse a ROWID string (18 characters) back to a RowId structure
 pub fn parse_rowid_string(s: &str) -> Result<RowId> {
     if s.len() != MAX_ROWID_LENGTH {

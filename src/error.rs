@@ -11,6 +11,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 /// Main error type for the Oracle driver
 #[derive(Error, Debug)]
+#[allow(missing_docs)]
 pub enum Error {
     // =========================================================================
     // Protocol Errors

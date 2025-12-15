@@ -15,15 +15,6 @@ use crate::constants::{charset, encoding, MessageType, PacketType, PACKET_HEADER
 use crate::error::Result;
 use crate::packet::PacketHeader;
 
-/// Data type representation modes
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u16)]
-pub enum TypeRepresentation {
-    Native = 0,
-    Universal = 1,
-    Oracle = 10,
-}
-
 /// A data type definition for negotiation
 #[derive(Debug, Clone, Copy)]
 pub struct DataTypeDefinition {
@@ -359,7 +350,6 @@ const TNS_DATA_TYPE_UDS: u16 = 663;
 const TNS_DATA_TYPE_PLOP: u16 = 665;
 
 // Type representations
-const TNS_TYPE_REP_NATIVE: u16 = 0;
 const TNS_TYPE_REP_UNIVERSAL: u16 = 1;
 const TNS_TYPE_REP_ORACLE: u16 = 10;
 

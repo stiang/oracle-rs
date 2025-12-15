@@ -64,6 +64,7 @@ impl TryFrom<u8> for PacketType {
 // =============================================================================
 
 /// Packet flags (found in packet header byte 6)
+#[allow(missing_docs)]
 pub mod packet_flags {
     pub const REDIRECT: u8 = 0x04;
     pub const TLS_RENEG: u8 = 0x08;
@@ -74,6 +75,7 @@ pub mod packet_flags {
 // =============================================================================
 
 /// Data flags (first 2 bytes of DATA packet payload)
+#[allow(missing_docs)]
 pub mod data_flags {
     pub const BEGIN_PIPELINE: u16 = 0x1000;
     pub const END_OF_REQUEST: u16 = 0x0800;
@@ -89,8 +91,11 @@ pub mod data_flags {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum MarkerType {
+    /// Break marker - interrupts current operation
     Break = 1,
+    /// Reset marker - resets connection state
     Reset = 2,
+    /// Interrupt marker - signals interrupt request
     Interrupt = 3,
 }
 
@@ -248,6 +253,8 @@ pub enum FunctionCode {
 // Control Packet Types
 // =============================================================================
 
+/// Control packet type constants
+#[allow(missing_docs)]
 pub mod control_type {
     pub const INBAND_NOTIFICATION: u16 = 8;
     pub const RESET_OOB: u16 = 9;
@@ -257,6 +264,7 @@ pub mod control_type {
 // Protocol Versions
 // =============================================================================
 
+/// Protocol version constants
 pub mod version {
     /// Desired protocol version to request
     pub const DESIRED: u16 = 319;
@@ -276,6 +284,7 @@ pub mod version {
 // Connection Constants
 // =============================================================================
 
+/// Connection-related constants
 pub mod connection {
     /// Default SDU (Session Data Unit) size
     pub const DEFAULT_SDU: u16 = 8192;
@@ -293,6 +302,8 @@ pub mod connection {
 // Service Options (GSO = Global Service Options)
 // =============================================================================
 
+/// Service options flags (GSO = Global Service Options)
+#[allow(missing_docs)]
 pub mod service_options {
     pub const DONT_CARE: u16 = 0x0001;
     pub const CAN_RECV_ATTENTION: u16 = 0x0400;
@@ -302,6 +313,8 @@ pub mod service_options {
 // NSI (Network Session Interface) Flags
 // =============================================================================
 
+/// NSI (Network Session Interface) flags
+#[allow(missing_docs)]
 pub mod nsi_flags {
     pub const DISABLE_NA: u8 = 0x04;
     pub const NA_REQUIRED: u8 = 0x10;
@@ -312,6 +325,8 @@ pub mod nsi_flags {
 // Accept Flags
 // =============================================================================
 
+/// Connection accept flags
+#[allow(missing_docs)]
 pub mod accept_flags {
     pub const CHECK_OOB: u32 = 0x00000001;
     pub const FAST_AUTH: u32 = 0x10000000;
@@ -322,6 +337,8 @@ pub mod accept_flags {
 // Authentication Modes
 // =============================================================================
 
+/// Authentication mode flags
+#[allow(missing_docs)]
 pub mod auth_mode {
     pub const LOGON: u32 = 0x00000001;
     pub const CHANGE_PASSWORD: u32 = 0x00000002;
@@ -341,6 +358,8 @@ pub mod auth_mode {
 // Verifier Types (for authentication)
 // =============================================================================
 
+/// Authentication verifier type constants
+#[allow(missing_docs)]
 pub mod verifier_type {
     pub const V11G_1: u32 = 0xb152;
     pub const V11G_2: u32 = 0x1b25;
@@ -351,6 +370,8 @@ pub mod verifier_type {
 // Character Sets
 // =============================================================================
 
+/// Character set ID constants
+#[allow(missing_docs)]
 pub mod charset {
     pub const AL16UTF8: u16 = 208;
     pub const UTF8: u16 = 873;
@@ -361,6 +382,8 @@ pub mod charset {
 // Compile-Time Capability Indices (CCAP)
 // =============================================================================
 
+/// Compile-time capability index constants
+#[allow(missing_docs)]
 pub mod ccap_index {
     pub const SQL_VERSION: usize = 0;
     pub const LOGON_TYPES: usize = 4;
@@ -393,6 +416,8 @@ pub mod ccap_index {
 // Compile-Time Capability Values (CCAP)
 // =============================================================================
 
+/// Compile-time capability value constants
+#[allow(missing_docs)]
 pub mod ccap_value {
     pub const SQL_VERSION_MAX: u8 = 6;
     pub const FIELD_VERSION_11_2: u8 = 6;
@@ -466,6 +491,8 @@ pub mod ccap_value {
 // Runtime Capability Indices (RCAP)
 // =============================================================================
 
+/// Runtime capability index constants
+#[allow(missing_docs)]
 pub mod rcap_index {
     pub const COMPAT: usize = 0;
     pub const TTC: usize = 6;
@@ -476,6 +503,8 @@ pub mod rcap_index {
 // Runtime Capability Values (RCAP)
 // =============================================================================
 
+/// Runtime capability value constants
+#[allow(missing_docs)]
 pub mod rcap_value {
     pub const COMPAT_81: u8 = 2;
     pub const TTC_ZERO_COPY: u8 = 0x01;
@@ -487,6 +516,8 @@ pub mod rcap_value {
 // Encoding Flags
 // =============================================================================
 
+/// Character encoding flags
+#[allow(missing_docs)]
 pub mod encoding {
     pub const MULTI_BYTE: u8 = 0x01;
     pub const CONV_LENGTH: u8 = 0x02;
@@ -496,6 +527,7 @@ pub mod encoding {
 // TNS Length Indicators
 // =============================================================================
 
+/// TNS length indicator constants
 pub mod length {
     /// Maximum length that fits in a single byte
     pub const MAX_SHORT: u8 = 252;
@@ -511,6 +543,8 @@ pub mod length {
 // Execute Options
 // =============================================================================
 
+/// Execute option flags
+#[allow(missing_docs)]
 pub mod exec_option {
     pub const PARSE: u32 = 0x01;
     pub const BIND: u32 = 0x08;
@@ -530,6 +564,8 @@ pub mod exec_option {
 // Execute Flags
 // =============================================================================
 
+/// Execute flags for statement execution
+#[allow(missing_docs)]
 pub mod exec_flags {
     pub const DML_ROWCOUNTS: u32 = 0x4000;
     pub const IMPLICIT_RESULTSET: u32 = 0x8000;
@@ -693,6 +729,7 @@ impl TryFrom<u8> for OracleType {
 // Character Set Form (CSFRM)
 // =============================================================================
 
+/// Character set form (CSFRM) constants
 pub mod csfrm {
     /// Implicit charset (database charset)
     pub const IMPLICIT: u8 = 1;
@@ -711,6 +748,7 @@ pub const MAX_LONG_LENGTH: u32 = 0x7FFFFFFF;
 pub const MAX_UROWID_LENGTH: u32 = 5267;
 
 /// Bind indicator flags
+#[allow(missing_docs)]
 pub mod bind_flags {
     pub const USE_INDICATORS: u8 = 0x01;
     pub const ARRAY: u8 = 0x40;
@@ -761,6 +799,7 @@ impl TryFrom<u8> for BindDirection {
 }
 
 /// LOB-related flags and constants
+#[allow(missing_docs)]
 pub mod lob_flags {
     /// LOB prefetch flag for cont_flag field
     pub const PREFETCH: u64 = 0x2000000;
@@ -793,6 +832,7 @@ pub mod lob_flags {
 }
 
 /// LOB operation codes (for function code 96)
+#[allow(missing_docs)]
 pub mod lob_op {
     pub const GET_LENGTH: u32 = 0x0001;
     pub const READ: u32 = 0x0002;
@@ -865,6 +905,7 @@ pub mod collection_type {
 }
 
 /// TDS (Type Descriptor Set) type codes for object elements
+#[allow(missing_docs)]
 pub mod tds_type {
     pub const CHAR: u8 = 1;
     pub const DATE: u8 = 2;
@@ -893,6 +934,8 @@ pub mod tds_type {
 // Error Codes
 // =============================================================================
 
+/// Oracle error code constants
+#[allow(missing_docs)]
 pub mod error_code {
     pub const INCONSISTENT_DATA_TYPES: u32 = 932;
     pub const VAR_NOT_IN_SELECT_LIST: u32 = 1007;
