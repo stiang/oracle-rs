@@ -191,12 +191,14 @@ impl PacketBuilder {
     }
 
     /// Set whether to use large SDU (4-byte length field)
+    #[allow(dead_code)]
     pub fn large_sdu(mut self, large_sdu: bool) -> Self {
         self.large_sdu = large_sdu;
         self
     }
 
     /// Set packet flags
+    #[allow(dead_code)]
     pub fn flags(mut self, flags: u8) -> Self {
         self.header.flags = flags;
         self

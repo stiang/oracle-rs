@@ -1023,7 +1023,7 @@ mod dml_tests {
         eprintln!("[TEST] INSERT completed, rows_affected={}", result.rows_affected);
 
         // Should affect 1 row
-        assert!(result.rows_affected >= 0);
+        assert_eq!(result.rows_affected, 1);
 
         // Rollback so we don't affect other tests
         eprintln!("[TEST] Starting ROLLBACK");
@@ -1054,8 +1054,8 @@ mod dml_tests {
             &[]
         ).await.expect("Update failed");
 
-        // Should affect 2 rows (Engineering department)
-        assert!(result.rows_affected >= 0);
+        // Should affect some rows (Engineering department)
+        assert!(result.rows_affected > 0);
 
         // Rollback
         conn.rollback().await.expect("Rollback failed");
@@ -1074,7 +1074,8 @@ mod dml_tests {
             &[]
         ).await.expect("Delete failed");
 
-        assert!(result.rows_affected >= 0);
+        // Should affect 1 row
+        assert_eq!(result.rows_affected, 1);
 
         // Rollback
         conn.rollback().await.expect("Rollback failed");
@@ -1101,7 +1102,8 @@ mod dml_tests {
             &[]
         ).await.expect("Insert failed");
 
-        assert!(result.rows_affected >= 0);
+        // Should affect 1 row
+        assert_eq!(result.rows_affected, 1);
 
         // Commit
         conn.commit().await.expect("Commit failed");
@@ -1388,7 +1390,7 @@ mod subquery_tests {
         ).await.expect("Query failed");
 
         // Some employees should have above-average salary
-        assert!(result.row_count() >= 0);
+        assert!(result.row_count() > 0);
 
         conn.close().await.expect("Failed to close");
     }
@@ -1609,7 +1611,7 @@ mod bind_parameter_tests {
 
 mod batch_execution_tests {
     use super::*;
-    use oracle_rs::{BatchBuilder, Value};
+    use oracle_rs::BatchBuilder;
 
     #[tokio::test]
     #[ignore = "requires Oracle database"]
@@ -2181,7 +2183,7 @@ mod lob_bind_tests {
     #[tokio::test]
     #[ignore = "requires Oracle database"]
     async fn test_temp_lob_insert() {
-        use oracle_rs::{OracleType, LobData, LobValue};
+        use oracle_rs::{OracleType, LobValue};
 
         let conn = connect().await.expect("Failed to connect");
 

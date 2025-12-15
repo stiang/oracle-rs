@@ -4,7 +4,7 @@
 //! describe info parsing, and fetch message building.
 
 use oracle_rs::constants::{
-    exec_flags, exec_option, FunctionCode, MessageType, OracleType, PacketType, PACKET_HEADER_SIZE,
+    FunctionCode, MessageType, OracleType, PacketType, PACKET_HEADER_SIZE,
 };
 use oracle_rs::messages::{ExecuteMessage, ExecuteOptions, FetchMessage};
 use oracle_rs::statement::{BindInfo, ColumnInfo, Statement, StatementType};

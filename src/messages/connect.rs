@@ -305,7 +305,7 @@ mod tests {
         let long_service = "A".repeat(300);
         let config = Config::new("localhost", 1521, &long_service, "u", "p");
         let msg = ConnectMessage::from_config(&config);
-        let (connect, data) = msg.build_with_continuation().unwrap();
+        let (_connect, data) = msg.build_with_continuation().unwrap();
 
         // Should need separate DATA packet
         assert!(data.is_some());
