@@ -1,0 +1,90 @@
+[package]
+name = "oracle-rs"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.70"
+authors = ["Stian Grytøyr"]
+description = "Pure Rust driver for Oracle databases - no OCI/ODPI-C required"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/oracle-rs/oracle-rs"
+homepage = "https://github.com/oracle-rs/oracle-rs"
+documentation = "https://docs.rs/oracle-rs"
+readme = "README.md"
+keywords = ["oracle", "database", "driver", "async", "tns"]
+categories = ["database", "asynchronous"]
+exclude = [
+    ".github/",
+    "tests/",
+]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[dependencies]
+# Async runtime
+tokio = { version = "1", features = ["net", "io-util", "time", "rt", "sync"] }
+
+# Byte manipulation
+bytes = "1"
+
+# Error handling
+thiserror = "1"
+
+# Logging/tracing
+tracing = "0.1"
+
+# Crypto (for authentication)
+sha1 = "0.10"
+sha2 = "0.10"
+aes = "0.8"
+cbc = "0.1"
+md-5 = "0.10"
+rand = "0.8"
+pbkdf2 = "0.12"
+hmac = "0.12"
+hex = "0.4"
+
+# System info (for authentication session data)
+hostname = "0.4"
+chrono = "0.4"
+
+# For async traits
+async-trait = "0.1"
+
+# JSON support
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# TLS support
+tokio-rustls = "0.26"
+rustls = { version = "0.23", default-features = false, features = ["std", "tls12"] }
+rustls-pemfile = "2"
+webpki-roots = "0.26"
+rustls-pki-types = "1"
+
+# Encrypted PEM/PKCS#8 key support (for Oracle wallet)
+pkcs8 = { version = "0.10", features = ["encryption", "pem"] }
+
+# LRU statement cache
+indexmap = "2"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "test-util"] }
+tokio-test = "0.4"
+
+[[test]]
+name = "packet_tests"
+path = "tests/packet_tests.rs"
+
+[[test]]
+name = "buffer_tests"
+path = "tests/buffer_tests.rs"
+
+[[test]]
+name = "statement_tests"
+path = "tests/statement_tests.rs"
+
+[[test]]
+name = "integration_tests"
+path = "tests/integration_tests.rs"
