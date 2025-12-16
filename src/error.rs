@@ -86,6 +86,10 @@ pub enum Error {
     #[error("connection closed unexpectedly")]
     ConnectionClosed,
 
+    /// Connection closed by server with reason
+    #[error("{0}")]
+    ConnectionClosedByServer(String),
+
     /// Connection not ready for operations
     #[error("connection not ready")]
     ConnectionNotReady,
@@ -224,6 +228,7 @@ impl Error {
             self,
             Error::ConnectionRefused { .. }
                 | Error::ConnectionClosed
+                | Error::ConnectionClosedByServer(_)
                 | Error::ConnectionTimeout(_)
                 | Error::Io(_)
         )

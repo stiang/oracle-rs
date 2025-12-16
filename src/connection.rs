@@ -667,11 +667,16 @@ impl ConnectionInner {
                     // Skip additional marker packets
                 }
                 Err(_) => {
-                    // Connection closed after reset - return a generic error
-                    return Err(Error::OracleError {
-                        code: 0,
-                        message: "Statement execution failed (connection reset)".to_string(),
-                    });
+                    // Connection closed after reset - Oracle Free and some versions
+                    // close the connection instead of sending the error details.
+                    // This typically happens when:
+                    // - Table or view doesn't exist
+                    // - Insufficient privileges to access the object
+                    // - Invalid SQL syntax
+                    return Err(Error::ConnectionClosedByServer(
+                        "Query failed - Oracle closed the connection without providing error details. \
+                         This typically indicates insufficient privileges or the object doesn't exist.".to_string()
+                    ));
                 }
             }
         }
@@ -816,6 +821,24 @@ impl Connection {
     /// Check if the connection is closed
     pub fn is_closed(&self) -> bool {
         self.closed.load(Ordering::Relaxed)
+    }
+
+    /// Mark the connection as closed
+    ///
+    /// This should be called when the underlying connection is detected as broken.
+    /// Once marked closed, `is_closed()` returns true and operations will fail fast.
+    pub fn mark_closed(&self) {
+        self.closed.store(true, Ordering::Relaxed);
+    }
+
+    /// Helper to mark connection as closed if the result is a connection error
+    fn handle_result<T>(&self, result: Result<T>) -> Result<T> {
+        if let Err(ref e) = result {
+            if e.is_connection_error() {
+                self.mark_closed();
+            }
+        }
+        result
     }
 
     /// Get server information
@@ -1265,7 +1288,7 @@ impl Connection {
             }
         }
 
-        result
+        self.handle_result(result)
     }
 
     /// Execute DML (INSERT, UPDATE, DELETE) and return rows affected
@@ -1314,7 +1337,7 @@ impl Connection {
             }
         }
 
-        result.map(|r| r.rows_affected)
+        self.handle_result(result).map(|r| r.rows_affected)
     }
 
     /// Execute a PL/SQL block with IN/OUT/INOUT parameters
@@ -1885,6 +1908,10 @@ impl Connection {
         let mut rows = Vec::new();
         let mut has_more_rows = false;
 
+        // Bit vector for duplicate column optimization
+        let mut bit_vector: Option<Vec<u8>> = None;
+        let mut previous_row_values: Option<Vec<Value>> = None;
+
         // Skip data flags
         buf.skip(2)?;
 
@@ -1903,7 +1930,9 @@ impl Connection {
                     let num_bytes = buf.read_ub4()?;
                     if num_bytes > 0 {
                         buf.skip(1)?; // skip repeated length
-                        buf.skip(num_bytes as usize)?; // skip bit vector
+                        // This bit vector in row header is for the following row data
+                        let bv = buf.read_bytes_vec(num_bytes as usize)?;
+                        bit_vector = Some(bv);
                     }
                     let rxhrid_bytes = buf.read_ub4()?;
                     if rxhrid_bytes > 0 {
@@ -1911,19 +1940,27 @@ impl Connection {
                     }
                 }
                 x if x == MessageType::RowData as u8 => {
-                    // Parse actual row data
-                    let row = self.parse_single_row_with_caps(&mut buf, columns, caps)?;
+                    // Parse actual row data with bit vector support
+                    let row = self.parse_row_data_with_bitvector(
+                        &mut buf,
+                        columns,
+                        caps,
+                        bit_vector.as_deref(),
+                        previous_row_values.as_ref(),
+                    )?;
+                    previous_row_values = Some(row.values().to_vec());
+                    bit_vector = None;
                     rows.push(row);
                 }
                 x if x == MessageType::BitVector as u8 => {
-                    // BitVector indicates column nulls for following rows
-                    // Skip: num_columns_sent (ub2) + bit vector bytes
+                    // BitVector indicates which columns have actual data vs duplicates
                     let _num_columns_sent = buf.read_ub2()?;
                     let num_bytes = (columns.len() + 7) / 8; // Round up
                     if num_bytes > 0 {
-                        buf.skip(num_bytes)?;
+                        let bv = buf.read_bytes_vec(num_bytes)?;
+                        bit_vector = Some(bv);
                     }
-                    // Continue processing - more RowData follows
+                    // Continue processing - RowData follows
                 }
                 x if x == MessageType::Error as u8 => {
                     // Error message contains row count and cursor info
@@ -2578,6 +2615,12 @@ impl Connection {
         let mut row_count: u64 = 0;
         let mut end_of_response = false;
 
+        // Bit vector for duplicate column optimization
+        // When Some, indicates which columns have actual data (bit=1) vs duplicates (bit=0)
+        let mut bit_vector: Option<Vec<u8>> = None;
+        // Previous row values for copying duplicates
+        let mut previous_row_values: Option<Vec<Value>> = None;
+
         // Process messages until we hit end of response or run out of data
         while !end_of_response && buf.remaining() > 0 {
             let msg_type = buf.read_u8()?;
@@ -2597,7 +2640,17 @@ impl Connection {
 
                 // RowData (7) - actual row values
                 x if x == MessageType::RowData as u8 => {
-                    let row = self.parse_row_data_single(&mut buf, &columns, caps)?;
+                    let row = self.parse_row_data_with_bitvector(
+                        &mut buf,
+                        &columns,
+                        caps,
+                        bit_vector.as_deref(),
+                        previous_row_values.as_ref(),
+                    )?;
+                    // Store this row's values for potential duplicate copying
+                    previous_row_values = Some(row.values().to_vec());
+                    // Clear bit vector after using it (it's per-row)
+                    bit_vector = None;
                     rows.push(row);
                 }
 
@@ -2631,13 +2684,15 @@ impl Connection {
                 }
 
                 // BitVector (21) - column presence bitmap for sparse results
+                // Bit=1 means actual data is sent, bit=0 means duplicate from previous row
                 21 => {
                     // Read num columns sent
                     let _num_columns_sent = buf.read_ub2()?;
                     // Read bit vector (1 byte per 8 columns, rounded up)
                     let num_bytes = (columns.len() + 7) / 8;
                     if num_bytes > 0 {
-                        buf.skip(num_bytes)?;
+                        let bv = buf.read_bytes_vec(num_bytes)?;
+                        bit_vector = Some(bv);
                     }
                 }
 
@@ -2986,6 +3041,59 @@ impl Connection {
         Ok(Row::new(values))
     }
 
+    /// Parse a single row of data with bit vector support for duplicate column optimization
+    ///
+    /// Oracle sends a BitVector message before RowData when some columns have the same
+    /// value as the previous row. Bits that are SET (1) indicate data is sent in the buffer;
+    /// bits that are CLEAR (0) indicate the value should be copied from the previous row.
+    fn parse_row_data_with_bitvector(
+        &self,
+        buf: &mut ReadBuffer,
+        columns: &[ColumnInfo],
+        caps: &Capabilities,
+        bit_vector: Option<&[u8]>,
+        previous_values: Option<&Vec<Value>>,
+    ) -> Result<Row> {
+        let mut values = Vec::with_capacity(columns.len());
+
+        for (col_idx, col) in columns.iter().enumerate() {
+            // Check if this column is a duplicate (bit=0 means duplicate)
+            let is_duplicate = if let Some(bv) = bit_vector {
+                let byte_num = col_idx / 8;
+                let bit_num = col_idx % 8;
+                if byte_num < bv.len() {
+                    // If bit is 0, it's a duplicate
+                    (bv[byte_num] & (1 << bit_num)) == 0
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+
+            if is_duplicate {
+                // Copy value from previous row
+                if let Some(prev) = previous_values {
+                    if col_idx < prev.len() {
+                        values.push(prev[col_idx].clone());
+                    } else {
+                        // Shouldn't happen, but fallback to null
+                        values.push(Value::Null);
+                    }
+                } else {
+                    // No previous row (shouldn't happen for duplicate), fallback to null
+                    values.push(Value::Null);
+                }
+            } else {
+                // Read actual value from buffer
+                let value = self.parse_column_value(buf, col, caps)?;
+                values.push(value);
+            }
+        }
+
+        Ok(Row::new(values))
+    }
+
     /// Parse a single column value from the buffer
     fn parse_column_value(&self, buf: &mut ReadBuffer, col: &ColumnInfo, caps: &Capabilities) -> Result<Value> {
         use crate::constants::OracleType;
@@ -3027,6 +3135,21 @@ impl Connection {
                     OracleType::Raw | OracleType::LongRaw => {
                         // RAW/LONG RAW types - return as bytes
                         Ok(Value::Bytes(bytes.to_vec()))
+                    }
+                    OracleType::Date => {
+                        // Oracle DATE format - 7 bytes
+                        let date = crate::types::decode_oracle_date(&bytes)?;
+                        Ok(Value::Date(date))
+                    }
+                    OracleType::Timestamp | OracleType::TimestampLtz => {
+                        // Oracle TIMESTAMP format - 11 bytes (date + fractional seconds)
+                        let ts = crate::types::decode_oracle_timestamp(&bytes)?;
+                        Ok(Value::Timestamp(ts))
+                    }
+                    OracleType::TimestampTz => {
+                        // Oracle TIMESTAMP WITH TIME ZONE - 13 bytes
+                        let ts = crate::types::decode_oracle_timestamp(&bytes)?;
+                        Ok(Value::Timestamp(ts))
                     }
                     _ => {
                         // Default: return as raw bytes or string
@@ -3885,6 +4008,18 @@ impl Connection {
         // The simple function protocol triggers BREAK marker + connection close on Oracle Free 23ai
         self.query("SELECT 1 FROM DUAL", &[]).await?;
         Ok(())
+    }
+
+    /// Clear the statement cache
+    ///
+    /// This should be called when recycling a connection in a pool to ensure
+    /// that any stale cursor state is cleared. This is useful after errors
+    /// or when the connection state may be inconsistent.
+    pub async fn clear_statement_cache(&self) {
+        let mut inner = self.inner.lock().await;
+        if let Some(ref mut cache) = inner.statement_cache {
+            cache.clear();
+        }
     }
 
     /// Read data from a LOB (CLOB or BLOB)
