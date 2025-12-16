@@ -2058,16 +2058,6 @@ impl Connection {
         Ok((error_num, error_msg, more_rows))
     }
 
-    /// Parse a single row of data with provided capabilities
-    fn parse_single_row_with_caps(&self, buf: &mut ReadBuffer, columns: &[ColumnInfo], caps: &Capabilities) -> Result<Row> {
-        let mut values = Vec::with_capacity(columns.len());
-        for col in columns {
-            let value = self.parse_column_value(buf, col, caps)?;
-            values.push(value);
-        }
-        Ok(Row::new(values))
-    }
-
     /// Open a scrollable cursor for bidirectional navigation
     ///
     /// Scrollable cursors allow moving forward and backward through result sets,

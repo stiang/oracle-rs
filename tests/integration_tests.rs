@@ -1,30 +1,58 @@
 //! Integration tests for Oracle-RS against a real Oracle database
 //!
-//! These tests require a running Oracle instance. Set the following environment variables:
-//! - ORACLE_HOST: Oracle host (default: localhost)
-//! - ORACLE_PORT: Oracle port (default: 1521)
-//! - ORACLE_SERVICE: Oracle service name (default: FREEPDB1)
-//! - ORACLE_USER: Oracle username (default: system)
-//! - ORACLE_PASSWORD: Oracle password (default: testpass)
+//! These tests require a running Oracle instance. Configure using environment variables:
 //!
-//! Run with: cargo test --test integration_tests -- --ignored
+//! Option 1 - Connection string (preferred):
+//!   ORACLE_CONNECT_STRING: EZConnect format, e.g., "host:port/service_name"
+//!   ORACLE_USER: Oracle username
+//!   ORACLE_PASSWORD: Oracle password
+//!
+//! Option 2 - Individual parameters:
+//!   ORACLE_HOST: Oracle host (default: localhost)
+//!   ORACLE_PORT: Oracle port (default: 1521)
+//!   ORACLE_SERVICE: Oracle service name (default: FREEPDB1)
+//!   ORACLE_USER: Oracle username (default: system)
+//!   ORACLE_PASSWORD: Oracle password (required, no default)
+//!
+//! Examples:
+//!   # Using connection string:
+//!   ORACLE_CONNECT_STRING="myserver:1521/ORCL" ORACLE_USER=scott ORACLE_PASSWORD=tiger \
+//!       cargo test --test integration_tests -- --ignored
+//!
+//!   # Using individual parameters:
+//!   ORACLE_HOST=myserver ORACLE_SERVICE=ORCL ORACLE_USER=scott ORACLE_PASSWORD=tiger \
+//!       cargo test --test integration_tests -- --ignored
 
 use oracle_rs::{Config, Connection, Error};
 
-/// Get test configuration from environment or use defaults
+/// Get test configuration from environment variables
+///
+/// Supports two modes:
+/// 1. ORACLE_CONNECT_STRING with ORACLE_USER and ORACLE_PASSWORD
+/// 2. Individual ORACLE_HOST, ORACLE_PORT, ORACLE_SERVICE, ORACLE_USER, ORACLE_PASSWORD
 fn get_test_config() -> Config {
+    let username = std::env::var("ORACLE_USER").unwrap_or_else(|_| "system".to_string());
+    let password = std::env::var("ORACLE_PASSWORD")
+        .expect("ORACLE_PASSWORD environment variable is required");
+
+    // Check for connection string first
+    if let Ok(connect_string) = std::env::var("ORACLE_CONNECT_STRING") {
+        let mut config: Config = connect_string.parse()
+            .expect("Failed to parse ORACLE_CONNECT_STRING");
+        config.set_username(&username);
+        config.set_password(&password);
+        return config;
+    }
+
+    // Fall back to individual parameters
     let host = std::env::var("ORACLE_HOST").unwrap_or_else(|_| "localhost".to_string());
     let port: u16 = std::env::var("ORACLE_PORT")
         .ok()
         .and_then(|p| p.parse().ok())
         .unwrap_or(1521);
     let service = std::env::var("ORACLE_SERVICE").unwrap_or_else(|_| "FREEPDB1".to_string());
-    let username = std::env::var("ORACLE_USER").unwrap_or_else(|_| "system".to_string());
-    let password = std::env::var("ORACLE_PASSWORD").unwrap_or_else(|_| "testpass".to_string());
 
-    let mut config = Config::new(&host, port, &service, &username, &password);
-    config.set_password(&password);
-    config
+    Config::new(&host, port, &service, &username, &password)
 }
 
 /// Helper to connect using test configuration
