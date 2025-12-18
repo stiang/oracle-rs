@@ -1,13 +1,13 @@
 [package]
 name = "oracle-rs"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 rust-version = "1.70"
 authors = ["Stian Grytøyr"]
 description = "Pure Rust driver for Oracle databases - no OCI/ODPI-C required"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/oracle-rs/oracle-rs"
-homepage = "https://github.com/oracle-rs/oracle-rs"
+repository = "https://github.com/stiang/oracle-rs"
+homepage = "https://github.com/stiang/oracle-rs"
 documentation = "https://docs.rs/oracle-rs"
 readme = "README.md"
 keywords = ["oracle", "database", "driver", "async", "tns"]
@@ -88,4 +88,3 @@ path = "tests/statement_tests.rs"
 [[test]]
 name = "integration_tests"
 path = "tests/integration_tests.rs"
-
