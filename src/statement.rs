@@ -786,14 +786,21 @@ impl Statement {
     /// Clone statement for cache reuse, preserving cursor_id and metadata
     ///
     /// This creates a copy of the statement that can be executed with new
-    /// bind values while reusing the server-side cursor. The cursor_id,
-    /// column metadata, and bind info are preserved.
+    /// bind values. The cursor_id is preserved if non-zero, allowing Oracle
+    /// to skip parsing and reexecute the existing cursor.
+    ///
+    /// Following python-oracledb's design:
+    /// - If cursor_id > 0, the cursor is still valid and can be reexecuted
+    /// - If cursor_id = 0, Oracle will issue a fresh cursor
+    ///
+    /// The `mark_cursor_closed` method in StatementCache resets cursor_id to 0
+    /// when a cursor is no longer valid (query complete, DML executed, etc.)
     pub fn clone_for_reuse(&self) -> Self {
         Self {
             sql: self.sql.clone(),
             sql_bytes: self.sql_bytes.clone(),
             statement_type: self.statement_type,
-            cursor_id: self.cursor_id, // Preserve cursor!
+            cursor_id: self.cursor_id,
             bind_info_list: self.bind_info_list.clone(),
             columns: self.columns.clone(),
             executed: self.executed,

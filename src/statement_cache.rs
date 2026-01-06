@@ -4,6 +4,15 @@
 //! parsing of SQL statements on the Oracle server. When a statement is
 //! executed, its cursor ID and metadata are cached. Subsequent executions
 //! of the same SQL text can reuse the cached cursor, skipping the parse phase.
+//!
+//! # Cursor Lifecycle
+//!
+//! Following python-oracledb's design:
+//! - Cursors are closed by Oracle when a query completes (has_more_rows=false)
+//! - DML/DDL/PL-SQL cursors are closed immediately after execution (no fetch phase)
+//! - When a cursor is closed, its cursor_id is reset to 0 in the cached statement
+//! - On next execution, cursor_id=0 forces Oracle to issue a fresh cursor
+//! - This prevents data corruption from reusing stale cursor IDs
 
 use indexmap::IndexMap;
 use std::time::Instant;
@@ -62,9 +71,6 @@ pub struct StatementCache {
     cache: IndexMap<String, CachedStatement>,
     /// Maximum number of statements to cache
     max_size: usize,
-    /// Cursor IDs that need to be closed on the server
-    /// These are accumulated and sent piggybacked on the next message
-    cursors_to_close: Vec<u16>,
 }
 
 impl StatementCache {
@@ -75,7 +81,6 @@ impl StatementCache {
         Self {
             cache: IndexMap::with_capacity(max_size),
             max_size,
-            cursors_to_close: Vec::new(),
         }
     }
 
@@ -101,6 +106,7 @@ impl StatementCache {
             }
 
             // Mark as in use and return a clone for reuse
+            // clone_for_reuse preserves cursor_id if non-zero, allowing reexecution
             cached.in_use = true;
             tracing::trace!(
                 sql = sql,
@@ -167,27 +173,41 @@ impl StatementCache {
         }
     }
 
-    /// Get and clear the list of cursor IDs that need to be closed
+    /// Mark a cursor as closed in the cache
     ///
-    /// These cursor IDs should be sent to the server on the next message.
-    pub fn take_cursors_to_close(&mut self) -> Vec<u16> {
-        std::mem::take(&mut self.cursors_to_close)
+    /// This should be called when a query completes (has_more_rows=false) or
+    /// when DML/DDL/PL-SQL execution completes.
+    ///
+    /// Following python-oracledb's clear_cursor design, we reset cursor_id to 0
+    /// so that the next execution will get a fresh cursor from Oracle.
+    /// This prevents data corruption from reusing stale cursor IDs.
+    ///
+    /// # Parameters
+    ///
+    /// * `sql` - The SQL statement text
+    pub fn mark_cursor_closed(&mut self, sql: &str) {
+        if let Some(cached) = self.cache.get_mut(sql) {
+            let old_cursor_id = cached.statement.cursor_id();
+            if old_cursor_id != 0 {
+                // Reset cursor_id to 0 - next execution will get a fresh cursor
+                cached.statement.set_cursor_id(0);
+                cached.statement.set_executed(false);
+                
+                tracing::trace!(
+                    sql = sql,
+                    old_cursor_id = old_cursor_id,
+                    "Cursor closed, reset cursor_id to 0"
+                );
+            }
+        }
     }
 
     /// Clear all cached statements
     ///
-    /// All cursor IDs are queued for closing. This should be called
-    /// when the session changes (e.g., DRCP session switch).
+    /// This should be called when the session changes (e.g., DRCP session switch).
     pub fn clear(&mut self) {
-        for (_, cached) in self.cache.drain(..) {
-            if cached.statement.cursor_id() != 0 {
-                self.cursors_to_close.push(cached.statement.cursor_id());
-            }
-        }
-        tracing::debug!(
-            cursors_to_close = self.cursors_to_close.len(),
-            "Statement cache cleared"
-        );
+        self.cache.clear();
+        tracing::debug!("Statement cache cleared");
     }
 
     /// Get the current number of cached statements
@@ -217,10 +237,6 @@ impl StatementCache {
 
         if let Some(key) = lru_key {
             if let Some(cached) = self.cache.swap_remove(&key) {
-                // Queue the cursor for closing
-                if cached.statement.cursor_id() != 0 {
-                    self.cursors_to_close.push(cached.statement.cursor_id());
-                }
                 tracing::trace!(
                     sql = key,
                     cursor_id = cached.statement.cursor_id(),
@@ -335,10 +351,6 @@ mod tests {
         assert_eq!(cache.len(), 3);
         assert!(cache.get("SELECT 2 FROM DUAL").is_none()); // Evicted
         assert!(cache.get("SELECT 1 FROM DUAL").is_some()); // Still there
-
-        // Check cursor 2 is queued for closing
-        let to_close = cache.take_cursors_to_close();
-        assert!(to_close.contains(&2));
     }
 
     #[test]
@@ -381,12 +393,6 @@ mod tests {
         cache.clear();
 
         assert_eq!(cache.len(), 0);
-
-        // Cursor IDs should be queued for closing
-        let to_close = cache.take_cursors_to_close();
-        assert_eq!(to_close.len(), 2);
-        assert!(to_close.contains(&1));
-        assert!(to_close.contains(&2));
     }
 
     #[test]
@@ -408,5 +414,125 @@ mod tests {
 
         let cached = cache.get("SELECT 1 FROM DUAL").unwrap();
         assert_eq!(cached.cursor_id(), 200);
+    }
+
+    #[test]
+    fn test_mark_cursor_closed() {
+        let mut cache = StatementCache::new(5);
+
+        // Add a statement with cursor_id
+        cache.put(
+            "SELECT 1 FROM DUAL".to_string(),
+            make_test_statement("SELECT 1 FROM DUAL", 100),
+        );
+
+        // Get it (marks in use)
+        let stmt = cache.get("SELECT 1 FROM DUAL").expect("Should be cached");
+        assert_eq!(stmt.cursor_id(), 100);
+
+        // Return and mark cursor as closed
+        cache.return_statement("SELECT 1 FROM DUAL");
+        cache.mark_cursor_closed("SELECT 1 FROM DUAL");
+
+        // Get it again - should have cursor_id = 0
+        let stmt = cache.get("SELECT 1 FROM DUAL").expect("Should still be cached");
+        assert_eq!(stmt.cursor_id(), 0); // Reset to 0
+        assert!(!stmt.executed()); // Also reset
+    }
+
+    #[test]
+    fn test_mark_cursor_closed_nonexistent() {
+        let mut cache = StatementCache::new(5);
+
+        // Should not panic when marking non-existent statement
+        cache.mark_cursor_closed("SELECT 1 FROM DUAL");
+        assert_eq!(cache.len(), 0);
+    }
+
+    #[test]
+    fn test_mark_cursor_closed_already_zero() {
+        let mut cache = StatementCache::new(5);
+
+        // Add statement, mark closed, then mark closed again
+        cache.put(
+            "SELECT 1 FROM DUAL".to_string(),
+            make_test_statement("SELECT 1 FROM DUAL", 100),
+        );
+        cache.mark_cursor_closed("SELECT 1 FROM DUAL");
+        cache.mark_cursor_closed("SELECT 1 FROM DUAL"); // Should be no-op
+
+        let stmt = cache.get("SELECT 1 FROM DUAL").expect("Should be cached");
+        assert_eq!(stmt.cursor_id(), 0);
+    }
+
+    #[test]
+    fn test_cursor_lifecycle_query_complete() {
+        // Simulates: execute query -> fetch all rows -> cursor closed -> reexecute
+        let mut cache = StatementCache::new(5);
+        let sql = "SELECT * FROM employees";
+
+        // First execution: gets cursor_id 100 from Oracle
+        let mut stmt = Statement::new(sql);
+        stmt.set_cursor_id(100);
+        stmt.set_executed(true);
+        cache.put(sql.to_string(), stmt);
+
+        // Get cached statement for reuse
+        let cached = cache.get(sql).expect("Should be cached");
+        assert_eq!(cached.cursor_id(), 100);
+
+        // Simulate: query completed (has_more_rows = false)
+        // Mark cursor as closed
+        cache.return_statement(sql);
+        cache.mark_cursor_closed(sql);
+
+        // Next execution: should get cursor_id = 0
+        // This forces Oracle to issue a fresh cursor
+        let cached = cache.get(sql).expect("Should still be cached");
+        assert_eq!(cached.cursor_id(), 0);
+    }
+
+    #[test]
+    fn test_cursor_lifecycle_dml() {
+        // Simulates: execute DML -> cursor closed immediately
+        let mut cache = StatementCache::new(5);
+        let sql = "INSERT INTO t VALUES (1)";
+
+        // First execution: gets cursor_id 200 from Oracle
+        let mut stmt = Statement::new(sql);
+        stmt.set_cursor_id(200);
+        stmt.set_executed(true);
+        cache.put(sql.to_string(), stmt);
+
+        // DML cursors are always closed after execution
+        cache.mark_cursor_closed(sql);
+
+        // Next execution: should get cursor_id = 0
+        let cached = cache.get(sql).expect("Should still be cached");
+        assert_eq!(cached.cursor_id(), 0);
+    }
+
+    #[test]
+    fn test_cursor_lifecycle_error_recovery() {
+        // Simulates: execute -> error -> cursor state unknown -> mark closed
+        let mut cache = StatementCache::new(5);
+        let sql = "SELECT * FROM employees";
+
+        // First execution succeeded
+        let mut stmt = Statement::new(sql);
+        stmt.set_cursor_id(100);
+        stmt.set_executed(true);
+        cache.put(sql.to_string(), stmt);
+
+        // Get for second execution
+        let _ = cache.get(sql);
+
+        // Execution failed - mark cursor closed for safety
+        cache.return_statement(sql);
+        cache.mark_cursor_closed(sql);
+
+        // Next execution gets fresh cursor
+        let cached = cache.get(sql).expect("Should be cached");
+        assert_eq!(cached.cursor_id(), 0);
     }
 }

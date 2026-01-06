@@ -1190,21 +1190,38 @@ impl Connection {
             Ok(query_result) => {
                 let mut inner = self.inner.lock().await;
                 if let Some(ref mut cache) = inner.statement_cache {
+                    // Determine if cursor should be marked closed based on statement type
+                    let should_close_cursor = if statement.statement_type() == StatementType::Query {
+                        // Queries: close only if all rows fetched
+                        !query_result.has_more_rows
+                    } else {
+                        // DML/DDL/PL-SQL: always close (no fetch phase)
+                        true
+                    };
+
                     if from_cache {
                         cache.return_statement(sql);
+                        if should_close_cursor {
+                            cache.mark_cursor_closed(sql);
+                        }
                     } else if query_result.cursor_id > 0 && !statement.is_ddl() {
                         let mut stmt_to_cache = statement.clone();
                         stmt_to_cache.set_cursor_id(query_result.cursor_id);
                         stmt_to_cache.set_executed(true);
                         cache.put(sql.to_string(), stmt_to_cache);
+                        if should_close_cursor {
+                            cache.mark_cursor_closed(sql);
+                        }
                     }
                 }
             }
             Err(_) => {
+                // On error, return to cache and mark cursor closed (unknown state)
                 if from_cache {
                     let mut inner = self.inner.lock().await;
                     if let Some(ref mut cache) = inner.statement_cache {
                         cache.return_statement(sql);
+                        cache.mark_cursor_closed(sql);
                     }
                 }
             }
@@ -1267,6 +1284,17 @@ impl Connection {
                     if from_cache {
                         // Return to cache
                         cache.return_statement(sql);
+                        
+                        // Mark cursor as closed if query completed
+                        // Following python-oracledb: closed cursors cannot be reexecuted
+                        if !query_result.has_more_rows {
+                            cache.mark_cursor_closed(sql);
+                            tracing::trace!(
+                                sql = sql,
+                                cursor_id = query_result.cursor_id,
+                                "Query completed, cursor closed by Oracle"
+                            );
+                        }
                     } else if query_result.cursor_id > 0 && !statement.is_ddl() {
                         // Cache the newly prepared statement with cursor_id and columns
                         let mut stmt_to_cache = statement.clone();
@@ -1274,15 +1302,22 @@ impl Connection {
                         stmt_to_cache.set_executed(true);
                         stmt_to_cache.set_columns(query_result.columns.clone());
                         cache.put(sql.to_string(), stmt_to_cache);
+                        
+                        // If query completed immediately, mark cursor as closed
+                        if !query_result.has_more_rows {
+                            cache.mark_cursor_closed(sql);
+                        }
                     }
                 }
             }
             Err(_) => {
                 // On error, still return statement to cache if it came from there
+                // Mark cursor as closed since state is unknown after error
                 if from_cache {
                     let mut inner = self.inner.lock().await;
                     if let Some(ref mut cache) = inner.statement_cache {
                         cache.return_statement(sql);
+                        cache.mark_cursor_closed(sql);
                     }
                 }
             }
@@ -1319,19 +1354,26 @@ impl Connection {
                 if let Some(ref mut cache) = inner.statement_cache {
                     if from_cache {
                         cache.return_statement(sql);
+                        // DML cursors are always closed after execution (no fetch)
+                        // Mark cursor as closed to get a fresh cursor on next execution
+                        cache.mark_cursor_closed(sql);
                     } else if query_result.cursor_id > 0 && !statement.is_ddl() {
                         let mut stmt_to_cache = statement.clone();
                         stmt_to_cache.set_cursor_id(query_result.cursor_id);
                         stmt_to_cache.set_executed(true);
                         cache.put(sql.to_string(), stmt_to_cache);
+                        // Mark cursor as closed immediately for DML
+                        cache.mark_cursor_closed(sql);
                     }
                 }
             }
             Err(_) => {
+                // On error, return to cache and mark cursor closed (unknown state)
                 if from_cache {
                     let mut inner = self.inner.lock().await;
                     if let Some(ref mut cache) = inner.statement_cache {
                         cache.return_statement(sql);
+                        cache.mark_cursor_closed(sql);
                     }
                 }
             }
