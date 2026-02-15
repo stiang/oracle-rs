@@ -656,10 +656,7 @@ impl AuthMessage {
         }
 
         // Use local timezone offset
-        let now = chrono::Local::now();
-        let offset = now.offset().local_minus_utc();
-        let hours = offset / 3600;
-        let minutes = (offset.abs() % 3600) / 60;
+        let (hours, minutes) = Self::local_utc_offset();
         let sign = if hours >= 0 { '+' } else { '-' };
 
         format!(
@@ -668,6 +665,26 @@ impl AuthMessage {
             hours.abs(),
             minutes
         )
+    }
+
+    /// Get the local UTC offset as (hours, minutes).
+    #[cfg(feature = "chrono")]
+    fn local_utc_offset() -> (i32, i32) {
+        let now = chrono::Local::now();
+        let offset = now.offset().local_minus_utc();
+        let hours = offset / 3600;
+        let minutes = (offset.abs() % 3600) / 60;
+        (hours, minutes)
+    }
+
+    /// Get the local UTC offset as (hours, minutes).
+    #[cfg(all(feature = "jiff", not(feature = "chrono")))]
+    fn local_utc_offset() -> (i32, i32) {
+        let now = jiff::Zoned::now();
+        let offset_secs = now.offset().seconds();
+        let hours = offset_secs / 3600;
+        let minutes = (offset_secs.abs() % 3600) / 60;
+        (hours, minutes)
     }
 
     /// Clear sensitive data

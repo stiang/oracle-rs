@@ -175,9 +175,9 @@
 //! |-------------|-----------|
 //! | NUMBER | `i8`, `i16`, `i32`, `i64`, `f32`, `f64`, `String` |
 //! | VARCHAR2, CHAR | `String`, `&str` |
-//! | DATE | `chrono::NaiveDateTime` |
-//! | TIMESTAMP | `chrono::NaiveDateTime` |
-//! | TIMESTAMP WITH TIME ZONE | `chrono::DateTime<FixedOffset>` |
+//! | DATE | `chrono::NaiveDateTime` or `jiff::DateTime` |
+//! | TIMESTAMP | `chrono::NaiveDateTime` or `jiff::DateTime` |
+//! | TIMESTAMP WITH TIME ZONE | `chrono::DateTime<FixedOffset>` or `jiff::Zoned` |
 //! | RAW | `Vec<u8>`, `&[u8]` |
 //! | CLOB, NCLOB | `String` |
 //! | BLOB | `Vec<u8>` |
