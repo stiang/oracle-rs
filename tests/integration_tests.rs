@@ -1,8 +1,25 @@
 //! Integration tests for Oracle-RS against a real Oracle database
 //!
-//! These tests require a running Oracle instance. Configure using environment variables:
+//! These tests require a running Oracle instance. The easiest way is to use
+//! the included Docker Compose setup:
 //!
-//! Option 1 - Connection string (preferred):
+//! ```sh
+//! # Start Oracle (takes ~2 minutes on first run)
+//! docker compose -f tests/oracle/docker-compose.yml up -d
+//!
+//! # Wait for healthy status
+//! docker compose -f tests/oracle/docker-compose.yml logs -f
+//!
+//! # Run integration tests (no env vars needed with defaults)
+//! cargo test --test integration_tests -- --ignored
+//!
+//! # Stop Oracle
+//! docker compose -f tests/oracle/docker-compose.yml down
+//! ```
+//!
+//! To use a different Oracle instance, configure with environment variables:
+//!
+//! Option 1 - Connection string:
 //!   ORACLE_CONNECT_STRING: EZConnect format, e.g., "host:port/service_name"
 //!   ORACLE_USER: Oracle username
 //!   ORACLE_PASSWORD: Oracle password
@@ -11,17 +28,8 @@
 //!   ORACLE_HOST: Oracle host (default: localhost)
 //!   ORACLE_PORT: Oracle port (default: 1521)
 //!   ORACLE_SERVICE: Oracle service name (default: FREEPDB1)
-//!   ORACLE_USER: Oracle username (default: system)
-//!   ORACLE_PASSWORD: Oracle password (required, no default)
-//!
-//! Examples:
-//!   # Using connection string:
-//!   ORACLE_CONNECT_STRING="myserver:1521/ORCL" ORACLE_USER=scott ORACLE_PASSWORD=tiger \
-//!       cargo test --test integration_tests -- --ignored
-//!
-//!   # Using individual parameters:
-//!   ORACLE_HOST=myserver ORACLE_SERVICE=ORCL ORACLE_USER=scott ORACLE_PASSWORD=tiger \
-//!       cargo test --test integration_tests -- --ignored
+//!   ORACLE_USER: Oracle username (default: testuser)
+//!   ORACLE_PASSWORD: Oracle password (default: testpass)
 
 use oracle_rs::{Config, Connection, Error};
 
@@ -30,10 +38,11 @@ use oracle_rs::{Config, Connection, Error};
 /// Supports two modes:
 /// 1. ORACLE_CONNECT_STRING with ORACLE_USER and ORACLE_PASSWORD
 /// 2. Individual ORACLE_HOST, ORACLE_PORT, ORACLE_SERVICE, ORACLE_USER, ORACLE_PASSWORD
+///
+/// Defaults match the docker-compose setup in tests/oracle/.
 fn get_test_config() -> Config {
-    let username = std::env::var("ORACLE_USER").unwrap_or_else(|_| "system".to_string());
-    let password = std::env::var("ORACLE_PASSWORD")
-        .expect("ORACLE_PASSWORD environment variable is required");
+    let username = std::env::var("ORACLE_USER").unwrap_or_else(|_| "testuser".to_string());
+    let password = std::env::var("ORACLE_PASSWORD").unwrap_or_else(|_| "testpass".to_string());
 
     // Check for connection string first
     if let Ok(connect_string) = std::env::var("ORACLE_CONNECT_STRING") {
@@ -110,7 +119,7 @@ mod connection_tests {
             .and_then(|p| p.parse().ok())
             .unwrap_or(1521);
         let service = std::env::var("ORACLE_SERVICE").unwrap_or_else(|_| "FREEPDB1".to_string());
-        let username = std::env::var("ORACLE_USER").unwrap_or_else(|_| "system".to_string());
+        let username = std::env::var("ORACLE_USER").unwrap_or_else(|_| "testuser".to_string());
         let password = std::env::var("ORACLE_PASSWORD").unwrap_or_else(|_| "testpass".to_string());
 
         let connect_string = format!("{}:{}/{}", host, port, service);
@@ -195,7 +204,7 @@ mod query_tests {
             &[]
         ).await.expect("Query failed");
 
-        assert_eq!(result.row_count(), 4);
+        assert_eq!(result.row_count(), 5);
         assert_eq!(result.column_count(), 2);
         assert!(result.column_by_name("DEPT_ID").is_some());
         assert!(result.column_by_name("DEPT_NAME").is_some());
@@ -213,7 +222,7 @@ mod query_tests {
             &[]
         ).await.expect("Query failed");
 
-        assert_eq!(result.row_count(), 5);
+        assert_eq!(result.row_count(), 6);
         assert!(result.column_by_name("EMP_ID").is_some());
         assert!(result.column_by_name("FIRST_NAME").is_some());
         assert!(result.column_by_name("LAST_NAME").is_some());
@@ -1378,7 +1387,7 @@ mod join_tests {
             &[]
         ).await.expect("Query failed");
 
-        assert_eq!(result.row_count(), 5);
+        assert_eq!(result.row_count(), 6);
         assert_eq!(result.column_count(), 3);
 
         conn.close().await.expect("Failed to close");
@@ -3847,18 +3856,8 @@ mod statement_cache_tests {
 
     /// Helper to connect with specific cache size
     async fn connect_with_cache(cache_size: usize) -> Result<Connection, Error> {
-        let host = std::env::var("ORACLE_HOST").unwrap_or_else(|_| "localhost".to_string());
-        let port: u16 = std::env::var("ORACLE_PORT")
-            .ok()
-            .and_then(|p| p.parse().ok())
-            .unwrap_or(1521);
-        let service = std::env::var("ORACLE_SERVICE").unwrap_or_else(|_| "FREEPDB1".to_string());
-        let username = std::env::var("ORACLE_USER").unwrap_or_else(|_| "system".to_string());
-        let password = std::env::var("ORACLE_PASSWORD").unwrap_or_else(|_| "testpass".to_string());
-
-        let config = Config::new(&host, port, &service, &username, &password)
-            .stmtcachesize(cache_size);
-
+        let mut config = get_test_config();
+        config = config.stmtcachesize(cache_size);
         Connection::connect_with_config(config).await
     }
 

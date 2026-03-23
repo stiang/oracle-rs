@@ -1,0 +1,18 @@
+services:
+  oracle:
+    image: gvenzl/oracle-free:slim
+    container_name: oracle-rs-test
+    ports:
+      - "1521:1521"
+    environment:
+      ORACLE_PASSWORD: oracle_rs_test
+      APP_USER: testuser
+      APP_USER_PASSWORD: testpass
+    volumes:
+      - ./init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "healthcheck.sh"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 90s
