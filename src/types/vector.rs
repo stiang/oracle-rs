@@ -11,6 +11,88 @@
 
 use crate::error::{Error, Result};
 
+/// Decode Oracle's BINARY_FLOAT encoding to f32.
+///
+/// Oracle uses a sort-friendly encoding where the sign bit is inverted for
+/// positive numbers, and all bits are complemented for negative numbers.
+fn decode_oracle_binary_float(bytes: [u8; 4]) -> f32 {
+    let [mut b0, mut b1, mut b2, mut b3] = bytes;
+    if b0 & 0x80 != 0 {
+        b0 &= 0x7f;
+    } else {
+        b0 = !b0;
+        b1 = !b1;
+        b2 = !b2;
+        b3 = !b3;
+    }
+    let bits = (b0 as u32) << 24 | (b1 as u32) << 16 | (b2 as u32) << 8 | b3 as u32;
+    f32::from_bits(bits)
+}
+
+/// Encode f32 to Oracle's BINARY_FLOAT encoding.
+fn encode_oracle_binary_float(value: f32) -> [u8; 4] {
+    let bits = value.to_bits();
+    let mut b0 = (bits >> 24) as u8;
+    let mut b1 = (bits >> 16) as u8;
+    let mut b2 = (bits >> 8) as u8;
+    let mut b3 = bits as u8;
+    if b0 & 0x80 == 0 {
+        b0 |= 0x80;
+    } else {
+        b0 = !b0;
+        b1 = !b1;
+        b2 = !b2;
+        b3 = !b3;
+    }
+    [b0, b1, b2, b3]
+}
+
+/// Decode Oracle's BINARY_DOUBLE encoding to f64.
+fn decode_oracle_binary_double(bytes: [u8; 8]) -> f64 {
+    let [mut b0, mut b1, mut b2, mut b3, mut b4, mut b5, mut b6, mut b7] = bytes;
+    if b0 & 0x80 != 0 {
+        b0 &= 0x7f;
+    } else {
+        b0 = !b0;
+        b1 = !b1;
+        b2 = !b2;
+        b3 = !b3;
+        b4 = !b4;
+        b5 = !b5;
+        b6 = !b6;
+        b7 = !b7;
+    }
+    let bits = (b0 as u64) << 56 | (b1 as u64) << 48 | (b2 as u64) << 40 | (b3 as u64) << 32
+        | (b4 as u64) << 24 | (b5 as u64) << 16 | (b6 as u64) << 8 | b7 as u64;
+    f64::from_bits(bits)
+}
+
+/// Encode f64 to Oracle's BINARY_DOUBLE encoding.
+fn encode_oracle_binary_double(value: f64) -> [u8; 8] {
+    let bits = value.to_bits();
+    let mut b0 = (bits >> 56) as u8;
+    let mut b1 = (bits >> 48) as u8;
+    let mut b2 = (bits >> 40) as u8;
+    let mut b3 = (bits >> 32) as u8;
+    let mut b4 = (bits >> 24) as u8;
+    let mut b5 = (bits >> 16) as u8;
+    let mut b6 = (bits >> 8) as u8;
+    let mut b7 = bits as u8;
+    if b0 & 0x80 == 0 {
+        b0 |= 0x80;
+    } else {
+        b0 = !b0;
+        b1 = !b1;
+        b2 = !b2;
+        b3 = !b3;
+        b4 = !b4;
+        b5 = !b5;
+        b6 = !b6;
+        b7 = !b7;
+    }
+    [b0, b1, b2, b3, b4, b5, b6, b7]
+}
+
 // Vector format constants
 const VECTOR_MAGIC_BYTE: u8 = 0xDB;
 const VECTOR_VERSION_BASE: u8 = 0;
@@ -266,9 +348,8 @@ fn decode_vector_values(data: &[u8], num_elements: usize, format: VectorFormat) 
                 if data.len() < offset + 4 {
                     return Err(Error::Protocol("Vector FLOAT32 data truncated".to_string()));
                 }
-                // Oracle uses big-endian IEEE 754 for BINARY_FLOAT
                 let bytes = [data[offset], data[offset + 1], data[offset + 2], data[offset + 3]];
-                values.push(f32::from_be_bytes(bytes));
+                values.push(decode_oracle_binary_float(bytes));
             }
             Ok(VectorData::Float32(values))
         }
@@ -279,12 +360,11 @@ fn decode_vector_values(data: &[u8], num_elements: usize, format: VectorFormat) 
                 if data.len() < offset + 8 {
                     return Err(Error::Protocol("Vector FLOAT64 data truncated".to_string()));
                 }
-                // Oracle uses big-endian IEEE 754 for BINARY_DOUBLE
                 let bytes = [
                     data[offset], data[offset + 1], data[offset + 2], data[offset + 3],
                     data[offset + 4], data[offset + 5], data[offset + 6], data[offset + 7],
                 ];
-                values.push(f64::from_be_bytes(bytes));
+                values.push(decode_oracle_binary_double(bytes));
             }
             Ok(VectorData::Float64(values))
         }
@@ -384,12 +464,12 @@ fn encode_vector_values(buf: &mut Vec<u8>, data: &VectorData) {
     match data {
         VectorData::Float32(values) => {
             for v in values {
-                buf.extend_from_slice(&v.to_be_bytes());
+                buf.extend_from_slice(&encode_oracle_binary_float(*v));
             }
         }
         VectorData::Float64(values) => {
             for v in values {
-                buf.extend_from_slice(&v.to_be_bytes());
+                buf.extend_from_slice(&encode_oracle_binary_double(*v));
             }
         }
         VectorData::Int8(values) => {
