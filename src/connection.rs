@@ -4604,12 +4604,12 @@ impl Connection {
             match msg_type {
                 // Parameter return (8) - contains the populated locator
                 x if x == MessageType::Parameter as u8 => {
-                    // Read the 40-byte locator
+                    // Read the 40-byte locator (matches the 40 bytes sent in request)
                     let loc_data = buf.read_bytes_vec(40)?;
                     locator_bytes = Some(loc_data);
-                    // Skip charset (ub2) and trailing flags (ub1)
-                    buf.skip(2)?; // charset
-                    buf.skip(1)?; // flags
+                    // Skip charset (variable-length ub2) and trailing flags (raw u8)
+                    buf.skip_ub2()?;
+                    buf.skip(1)?;
                 }
 
                 // Error/Status message (4) - code 0 means success
