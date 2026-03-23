@@ -4692,3 +4692,73 @@ mod collection_tests {
         conn.close().await.expect("Failed to close");
     }
 }
+
+mod statement_cache_reuse_tests {
+    use super::*;
+
+    /// Test that running the same query twice on the same connection returns
+    /// correct data both times. This reproduces the bug from issue #1 where
+    /// the statement cache preserved a stale cursor_id, causing the second
+    /// execution to return corrupted data (all None values).
+    #[tokio::test]
+    #[ignore = "requires Oracle database"]
+    async fn test_same_query_twice_returns_correct_data() {
+        let conn = connect().await.expect("Failed to connect");
+
+        let sql = "SELECT 'hello' AS greeting, 42 AS num FROM DUAL";
+
+        // First execution — should work fine
+        let result1 = conn.query(sql, &[]).await.expect("First query failed");
+        assert_eq!(result1.row_count(), 1, "First query should return 1 row");
+        let row1 = &result1.rows[0];
+        assert_eq!(row1.get_string(0), Some("hello"), "First query: greeting should be 'hello'");
+
+        // Second execution of the same SQL — this is where the bug manifests.
+        // With a stale cursor_id, Oracle returns corrupted data (None values).
+        let result2 = conn.query(sql, &[]).await.expect("Second query failed");
+        assert_eq!(result2.row_count(), 1, "Second query should return 1 row");
+        let row2 = &result2.rows[0];
+        assert_eq!(row2.get_string(0), Some("hello"), "Second query: greeting should be 'hello', not None");
+
+        // Third execution for good measure
+        let result3 = conn.query(sql, &[]).await.expect("Third query failed");
+        assert_eq!(result3.row_count(), 1, "Third query should return 1 row");
+        let row3 = &result3.rows[0];
+        assert_eq!(row3.get_string(0), Some("hello"), "Third query: greeting should be 'hello', not None");
+
+        conn.close().await.expect("Failed to close");
+    }
+
+    /// Same test but for DML — execute the same INSERT twice on the same connection
+    #[tokio::test]
+    #[ignore = "requires Oracle database"]
+    async fn test_same_dml_twice_succeeds() {
+        use oracle_rs::Value;
+        let conn = connect().await.expect("Failed to connect");
+
+        conn.execute("CREATE TABLE test_cache_dml (id NUMBER, name VARCHAR2(50))", &[])
+            .await.expect("Failed to create table");
+
+        let sql = "INSERT INTO test_cache_dml (id, name) VALUES (:1, :2)";
+
+        // First execution
+        let r1 = conn.execute(sql, &[Value::Integer(1), Value::from("Alice")])
+            .await.expect("First insert failed");
+        assert_eq!(r1.rows_affected, 1);
+
+        // Second execution — same SQL, different params
+        let r2 = conn.execute(sql, &[Value::Integer(2), Value::from("Bob")])
+            .await.expect("Second insert failed");
+        assert_eq!(r2.rows_affected, 1);
+
+        // Verify both rows exist
+        let result = conn.query("SELECT id, name FROM test_cache_dml ORDER BY id", &[])
+            .await.expect("Select failed");
+        assert_eq!(result.row_count(), 2, "Should have 2 rows");
+        assert_eq!(result.rows[0].get_string(1), Some("Alice"));
+        assert_eq!(result.rows[1].get_string(1), Some("Bob"));
+
+        conn.execute("DROP TABLE test_cache_dml", &[]).await.expect("Failed to drop table");
+        conn.close().await.expect("Failed to close");
+    }
+}

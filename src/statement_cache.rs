@@ -62,9 +62,6 @@ pub struct StatementCache {
     cache: IndexMap<String, CachedStatement>,
     /// Maximum number of statements to cache
     max_size: usize,
-    /// Cursor IDs that need to be closed on the server
-    /// These are accumulated and sent piggybacked on the next message
-    cursors_to_close: Vec<u16>,
 }
 
 impl StatementCache {
@@ -75,7 +72,6 @@ impl StatementCache {
         Self {
             cache: IndexMap::with_capacity(max_size),
             max_size,
-            cursors_to_close: Vec::new(),
         }
     }
 
@@ -167,27 +163,28 @@ impl StatementCache {
         }
     }
 
-    /// Get and clear the list of cursor IDs that need to be closed
+    /// Mark a cursor as closed in the cache
     ///
-    /// These cursor IDs should be sent to the server on the next message.
-    pub fn take_cursors_to_close(&mut self) -> Vec<u16> {
-        std::mem::take(&mut self.cursors_to_close)
+    /// Resets cursor_id to 0 so the next execution gets a fresh cursor from
+    /// Oracle. This prevents data corruption from reusing stale cursor IDs.
+    ///
+    /// Following python-oracledb's clear_cursor design pattern.
+    pub fn mark_cursor_closed(&mut self, sql: &str) {
+        if let Some(cached) = self.cache.get_mut(sql) {
+            if cached.statement.cursor_id() != 0 {
+                cached.statement.set_cursor_id(0);
+                cached.statement.set_executed(false);
+                tracing::trace!(sql = sql, "Cursor closed, reset cursor_id to 0");
+            }
+        }
     }
 
     /// Clear all cached statements
     ///
-    /// All cursor IDs are queued for closing. This should be called
-    /// when the session changes (e.g., DRCP session switch).
+    /// This should be called when the session changes (e.g., DRCP session switch).
     pub fn clear(&mut self) {
-        for (_, cached) in self.cache.drain(..) {
-            if cached.statement.cursor_id() != 0 {
-                self.cursors_to_close.push(cached.statement.cursor_id());
-            }
-        }
-        tracing::debug!(
-            cursors_to_close = self.cursors_to_close.len(),
-            "Statement cache cleared"
-        );
+        self.cache.clear();
+        tracing::debug!("Statement cache cleared");
     }
 
     /// Get the current number of cached statements
@@ -217,10 +214,6 @@ impl StatementCache {
 
         if let Some(key) = lru_key {
             if let Some(cached) = self.cache.swap_remove(&key) {
-                // Queue the cursor for closing
-                if cached.statement.cursor_id() != 0 {
-                    self.cursors_to_close.push(cached.statement.cursor_id());
-                }
                 tracing::trace!(
                     sql = key,
                     cursor_id = cached.statement.cursor_id(),
@@ -335,10 +328,6 @@ mod tests {
         assert_eq!(cache.len(), 3);
         assert!(cache.get("SELECT 2 FROM DUAL").is_none()); // Evicted
         assert!(cache.get("SELECT 1 FROM DUAL").is_some()); // Still there
-
-        // Check cursor 2 is queued for closing
-        let to_close = cache.take_cursors_to_close();
-        assert!(to_close.contains(&2));
     }
 
     #[test]
@@ -381,12 +370,6 @@ mod tests {
         cache.clear();
 
         assert_eq!(cache.len(), 0);
-
-        // Cursor IDs should be queued for closing
-        let to_close = cache.take_cursors_to_close();
-        assert_eq!(to_close.len(), 2);
-        assert!(to_close.contains(&1));
-        assert!(to_close.contains(&2));
     }
 
     #[test]
