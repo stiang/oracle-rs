@@ -17,6 +17,11 @@ exclude = [
     "tests/",
 ]
 
+[features]
+default = ["chrono"]
+chrono = ["dep:chrono"]
+jiff = ["dep:jiff"]
+
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
@@ -47,7 +52,8 @@ hex = "0.4"
 
 # System info (for authentication session data)
 hostname = "0.4"
-chrono = "0.4"
+chrono = { version = "0.4", optional = true }
+jiff = { version = "0.2", optional = true }
 
 # For async traits
 async-trait = "0.1"
